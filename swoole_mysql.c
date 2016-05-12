@@ -296,6 +296,11 @@ static sw_inline void mysql_get_socket(zval *mysql_link, zval *return_value, int
     php_stream *stream;
     *sock = -1;
 
+    if (Z_TYPE_P(mysql_link) != IS_OBJECT || strcasecmp(Z_OBJCE_P(mysql_link)->name, "mysqli") != 0)
+    {
+        return;
+    }
+
 #if PHP_MAJOR_VERSION > 5
     MYSQLI_FETCH_RESOURCE_CONN(mysql, mysql_link, MYSQLI_STATUS_VALID);
     stream = mysql->mysql->data->net->data->m.get_stream(mysql->mysql->data->net TSRMLS_CC);
@@ -1007,12 +1012,8 @@ PHP_FUNCTION(swoole_mysql_query)
         RETURN_FALSE;
     }
 
-#if PHP_MAJOR_VERSION < 7
     client->callback = callback;
-#else
-    client->callback = &client->_callback;
-    memcpy(client->callback, callback, sizeof(zval));
-#endif
+    sw_copy_to_stack(client->callback, client->_callback);
 
     sw_zval_add_ref(&client->callback);
     swString_clear(mysql_request_buffer);

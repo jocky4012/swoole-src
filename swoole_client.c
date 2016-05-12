@@ -283,6 +283,9 @@ static void client_check_setting(swClient *cli, zval *zset TSRMLS_DC)
     zval *v;
     int value = 1;
 
+    char *bind_address = NULL;
+    int bind_port = 0;
+
     vht = Z_ARRVAL_P(zset);
 
     //buffer: check eof
@@ -324,7 +327,7 @@ static void client_check_setting(swClient *cli, zval *zset TSRMLS_DC)
 
         if (cli->protocol.package_length_size == 0)
         {
-            swoole_php_fatal_error(E_ERROR, "unknow package_length_type, see pack(). Link: http://php.net/pack");
+            swoole_php_fatal_error(E_ERROR, "Unknown package_length_type name '%c', see pack(). Link: http://php.net/pack", cli->protocol.package_length_type);
             return;
         }
     }
@@ -361,6 +364,26 @@ static void client_check_setting(swClient *cli, zval *zset TSRMLS_DC)
         value = (int) Z_LVAL_P(v);
         swSocket_set_buffer_size(cli->socket->fd, value);
         cli->socket->buffer_size = cli->buffer_input_size = value;
+    }
+    /**
+     * bind address
+     */
+    if (sw_zend_hash_find(vht, ZEND_STRS("bind_address"), (void **) &v) == SUCCESS)
+    {
+        convert_to_string(v);
+        bind_address = Z_STRVAL_P(v);
+    }
+    /**
+     * bind port
+     */
+    if (sw_zend_hash_find(vht, ZEND_STRS("bind_port"), (void **) &v) == SUCCESS)
+    {
+        convert_to_long(v);
+        bind_port = (int) Z_LVAL_P(v);
+    }
+    if (bind_address)
+    {
+        swSocket_bind(cli->socket->fd, cli->type, bind_address, bind_port);
     }
     /**
      * TCP_NODELAY
@@ -696,6 +719,12 @@ static PHP_METHOD(swoole_client, __construct)
             swoole_php_fatal_error(E_ERROR, "The 'SWOOLE_KEEP' flag can only be used in the php-fpm or apache environment.");
         }
         php_swoole_check_reactor();
+    }
+
+    int client_type = php_swoole_socktype(Z_LVAL_P(ztype));
+    if (client_type < SW_SOCK_TCP || client_type > SW_SOCK_UNIX_STREAM)
+    {
+        swoole_php_fatal_error(E_ERROR, "Unknown client type '%d'.", client_type);
     }
 
     zend_update_property(swoole_client_class_entry_ptr, getThis(), ZEND_STRL("type"), ztype TSRMLS_CC);
@@ -1496,7 +1525,7 @@ static PHP_METHOD(swoole_client, on)
     }
     else
     {
-        swoole_php_fatal_error(E_WARNING, "swoole_client: event callback[%s] is unknow", cb_name);
+        swoole_php_fatal_error(E_WARNING, "Unknown event callback type name '%s'.", cb_name);
         RETURN_FALSE;
     }
     RETURN_TRUE;

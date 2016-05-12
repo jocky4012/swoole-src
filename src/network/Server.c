@@ -931,7 +931,7 @@ int swServer_tcp_sendwait(swServer *serv, int fd, void *data, uint32_t length)
 /**
  * for udp + tcp
  */
-int swServer_send2(swServer *serv, swSendData *resp)
+static int swServer_send2(swServer *serv, swSendData *resp)
 {
     int ret;
 
@@ -1011,12 +1011,24 @@ swListenPort* swServer_add_port(swServer *serv, int type, char *host, int port)
     bzero(ls->host, SW_HOST_MAXSIZE);
     strncpy(ls->host, host, SW_HOST_MAXSIZE);
 
-    //create listen socket
-    int sock = swSocket_bind(ls->type, ls->host, ls->port);
+    //create server socket
+    int sock = swSocket_create(type);
     if (sock < 0)
+    {
+        swSysError("create socket failed.");
+        return NULL;
+    }
+    //bind address and port
+    if (swSocket_bind(sock, ls->type, ls->host, ls->port) < 0)
     {
         return NULL;
     }
+    //stream socket, set nonblock
+    if (swSocket_is_stream(ls->type))
+    {
+        swSetNonBlock(sock);
+    }
+
     ls->sock = sock;
 
     if (swSocket_is_dgram(ls->type))
@@ -1156,7 +1168,6 @@ static void swHeartbeatThread_loop(swThreadParam *param)
 
     swServer *serv = param->object;
     swDataHead notify_ev;
-    swFactory *factory = &serv->factory;
     swConnection *conn;
     swReactor *reactor;
 
@@ -1192,11 +1203,13 @@ static void swHeartbeatThread_loop(swThreadParam *param)
 
                 notify_ev.fd = fd;
                 notify_ev.from_id = conn->from_id;
+
                 conn->close_force = 1;
+                conn->close_notify = 1;
+                conn->close_wait = 1;
 
                 if (serv->factory_mode != SW_MODE_PROCESS)
                 {
-                    conn->close_notify = 1;
                     if (serv->factory_mode == SW_MODE_SINGLE)
                     {
                         reactor = SwooleG.main_reactor;
@@ -1205,18 +1218,13 @@ static void swHeartbeatThread_loop(swThreadParam *param)
                     {
                         reactor = &serv->reactor_threads[conn->from_id].reactor;
                     }
-                    reactor->set(reactor, fd, SW_FD_TCP | SW_EVENT_WRITE);
-                }
-                else if (serv->disable_notify)
-                {
-                    conn->close_wait = 1;
-                    reactor = &serv->reactor_threads[conn->from_id].reactor;
-                    reactor->set(reactor, fd, SW_FD_TCP | SW_EVENT_WRITE);
                 }
                 else
                 {
-                    factory->notify(&serv->factory, &notify_ev);
+                    reactor = &serv->reactor_threads[conn->from_id].reactor;
                 }
+                //notify to reactor thread
+                reactor->set(reactor, fd, SW_FD_TCP | SW_EVENT_WRITE);
             }
         }
         sleep(serv->heartbeat_check_interval);

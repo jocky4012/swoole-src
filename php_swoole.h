@@ -43,7 +43,7 @@
 #include "Client.h"
 #include "async.h"
 
-#define PHP_SWOOLE_VERSION  "1.8.5-alpha"
+#define PHP_SWOOLE_VERSION  "1.8.5-rc2"
 #define PHP_SWOOLE_CHECK_CALLBACK
 
 /**
@@ -187,6 +187,9 @@ enum php_swoole_server_callback_type
 typedef struct
 {
     zval *callbacks[PHP_SERVER_PORT_CALLBACK_NUM];
+#if PHP_MAJOR_VERSION >= 7
+    zval _callbacks[PHP_SERVER_PORT_CALLBACK_NUM];
+#endif
     zval *setting;
 } swoole_server_port_property;
 //---------------------------------------------------------

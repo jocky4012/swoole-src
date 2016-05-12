@@ -35,6 +35,7 @@ static int swClient_close(swClient *cli);
 static int swClient_onDgramRead(swReactor *reactor, swEvent *event);
 static int swClient_onStreamRead(swReactor *reactor, swEvent *event);
 static int swClient_onWrite(swReactor *reactor, swEvent *event);
+static int swClient_onError(swReactor *reactor, swEvent *event);
 
 #ifdef SW_USE_OPENSSL
 static int swClient_enable_ssl_encrypt(swClient *cli);
@@ -123,6 +124,7 @@ int swClient_create(swClient *cli, int type, int async)
             SwooleG.main_reactor->setHandle(SwooleG.main_reactor, SW_FD_STREAM_CLIENT | SW_EVENT_READ, swClient_onStreamRead);
             SwooleG.main_reactor->setHandle(SwooleG.main_reactor, SW_FD_DGRAM_CLIENT | SW_EVENT_READ, swClient_onDgramRead);
             SwooleG.main_reactor->setHandle(SwooleG.main_reactor, SW_FD_STREAM_CLIENT | SW_EVENT_WRITE, swClient_onWrite);
+            SwooleG.main_reactor->setHandle(SwooleG.main_reactor, SW_FD_STREAM_CLIENT | SW_EVENT_ERROR, swClient_onError);
             isset_event_handle = 1;
         }
     }
@@ -335,7 +337,7 @@ static int swClient_close(swClient *cli)
     if (cli->async)
     {
         //remove from reactor
-        if (!cli->socket->removed)
+        if (!cli->socket->removed && SwooleG.main_reactor)
         {
             SwooleG.main_reactor->del(SwooleG.main_reactor, fd);
         }
@@ -785,6 +787,17 @@ static int swClient_onDgramRead(swReactor *reactor, swEvent *event)
     return SW_OK;
 }
 
+static int swClient_onError(swReactor *reactor, swEvent *event)
+{
+    swClient *cli = event->socket->object;
+    int ret = cli->close(cli);
+    if (!cli->socket->active && cli->onError)
+    {
+        cli->onError(cli);
+    }
+    return ret;
+}
+
 static int swClient_onWrite(swReactor *reactor, swEvent *event)
 {
     swClient *cli = event->socket->object;
@@ -812,7 +825,7 @@ static int swClient_onWrite(swReactor *reactor, swEvent *event)
     }
 
     socklen_t len = sizeof(SwooleG.error);
-    if (getsockopt (event->fd, SOL_SOCKET, SO_ERROR, &SwooleG.error, &len) < 0)
+    if (getsockopt(event->fd, SOL_SOCKET, SO_ERROR, &SwooleG.error, &len) < 0)
     {
         swWarn("getsockopt(%d) failed. Error: %s[%d]", event->fd, strerror(errno), errno);
         return SW_ERR;

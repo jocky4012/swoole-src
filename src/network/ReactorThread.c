@@ -275,8 +275,11 @@ int swReactorThread_close(swReactor *reactor, int fd)
         return SW_ERR;
     }
 
-    assert(fd % serv->reactor_num == reactor->id);
-    assert(fd % serv->reactor_num == SwooleTG.id);
+    if (serv->factory_mode == SW_MODE_PROCESS)
+    {
+        assert(fd % serv->reactor_num == reactor->id);
+        assert(fd % serv->reactor_num == SwooleTG.id);
+    }
 
     sw_atomic_fetch_add(&SwooleStats->close_count, 1);
     sw_atomic_fetch_sub(&SwooleStats->connection_num, 1);
@@ -293,11 +296,11 @@ int swReactorThread_close(swReactor *reactor, int fd)
     swListenPort *port = swServer_get_port(serv, fd);
 
     //clear output buffer
-    if (port->open_eof_check || port->open_length_check)
+    if (port->open_eof_check || port->open_length_check || port->open_mqtt_protocol)
     {
         if (conn->object)
         {
-            swString_free(conn->object);
+            swServer_free_buffer(serv, fd);
             conn->object = NULL;
         }
     }
@@ -307,9 +310,8 @@ int swReactorThread_close(swReactor *reactor, int fd)
         {
             if (conn->http_upgrade)
             {
-                swString_free(conn->object);
+                swServer_free_buffer(serv, fd);
                 conn->websocket_status = 0;
-                conn->object = NULL;
             }
             else
             {
@@ -1449,4 +1451,3 @@ void swReactorThread_free(swServer *serv)
         }
     }
 }
-
